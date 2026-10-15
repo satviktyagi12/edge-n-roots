@@ -20,7 +20,6 @@ rl.on('close', async () => {
     };
     let result;
     let libraryError = null;
-    // Prefer the assignment's formula-interpreter package when its runtime API is available.
     try {
       const library = require('formula-interpreter');
       let response;
@@ -36,9 +35,8 @@ rl.on('close', async () => {
     } catch (error) {
       libraryError = error.message;
     }
-    // Fail-closed fallback for package/API mismatch: evaluate only in this disposable process.
-    // vm's timeout interrupts synchronous infinite loops; the parent process also kills this worker.
-    const script = '(function(){' + formula + '\\n})()';
+    // Isolated fallback for package/API mismatch; the parent also enforces a hard timeout.
+    const script = '(function(){' + formula + '\n})()';
     result = vm.runInNewContext(script, context, { timeout: 800, contextCodeGeneration: { strings: false, wasm: false } });
     if (typeof result === 'undefined') throw new Error(libraryError || 'Formula did not return a value.');
     process.stdout.write(JSON.stringify({ status:'SUCCESS', result, inputs:data, calculationText:formula }));
