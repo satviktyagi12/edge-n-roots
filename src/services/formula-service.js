@@ -1,10 +1,14 @@
-const { randomUUID } = require('node:crypto');
+const { randomUUID, createHash } = require('node:crypto');
 const pool = require('../db/pool');
 const { saveRecord } = require('./save-record');
 const { evaluateFormula } = require('./formula-evaluator');
 const { currentFormulas, latestFormula, history } = require('../repositories/formula-repository');
 const { executionLevels, graphFor } = require('./dependency-graph');
 const { AppError } = require('../utils/errors');
+
+function formulaNameLock(name) {
+  return 'formula-name:' + createHash('sha256').update(name).digest('hex').slice(0, 48);
+}
 
 async function validateFormula(name, formula, replacingUuid = null) {
   if (!/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name)) {
@@ -27,7 +31,7 @@ async function validateFormula(name, formula, replacingUuid = null) {
 async function createOrChange(input) {
   if (!input.uuid) {
     const conn = await pool.getConnection();
-    const nameLock = `formula-name:${input.name}`;
+    const nameLock = formulaNameLock(input.name);
     let locked = false;
     try {
       const [lockRows] = await conn.execute('SELECT GET_LOCK(?, 10) AS acquired', [nameLock]);
@@ -59,7 +63,7 @@ async function createOrChange(input) {
       throw new AppError(409, 'VERSION_CONFLICT', 'Formula has changed since the version you last saw.', { currentVersion: current });
     }
     const merged = { ...current, name: input.name ?? current.name, formula: input.formula ?? current.formula };
-    nameLock = `formula-name:${merged.name}`;
+    nameLock = formulaNameLock(merged.name);
     const [nameLockRows] = await conn.execute('SELECT GET_LOCK(?, 10) AS acquired', [nameLock]);
     nameLocked = nameLockRows[0]?.acquired === 1;
     if (!nameLocked) throw new AppError(409, 'CONCURRENT_MODIFICATION', 'Could not acquire formula-name lock; retry the request.');
