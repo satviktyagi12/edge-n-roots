@@ -64,11 +64,14 @@ function evaluateSimpleArithmetic(formula, record, formulaValues, timeoutMs) {
     if (typeof result === 'undefined') {
       return { status: 'FAILED', error: 'Formula did not return a value.', calculationText: formula, inputs: data };
     }
+    const finalResult = typeof result === 'number' ? round2(result) : result;
+    const substituted = formula.replace(/EXTERNAL_VAR\s*\.\s*([A-Za-z_$][\w$]*)/g,
+      (match, key) => Object.prototype.hasOwnProperty.call(data, key) ? JSON.stringify(data[key]) : match);
     return {
       status: 'SUCCESS',
-      result: typeof result === 'number' ? round2(result) : result,
+      result: finalResult,
       inputs: data,
-      calculationText: formula
+      calculationText: formula + '\n=> ' + substituted + '\n=> ' + JSON.stringify(finalResult)
     };
   } catch (error) {
     return { status: 'FAILED', error: error.message, calculationText: formula, inputs: { ...(record || {}), ...(formulaValues || {}) } };
