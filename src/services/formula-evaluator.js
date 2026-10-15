@@ -3,17 +3,14 @@ const path = require('node:path');
 const config = require('../config');
 const { round2 } = require('./rounding');
 
-function escapeRegex(value) {
-  return value.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');
-}
 function normalizeReferences(formula, formulaValues) {
   return Object.keys(formulaValues || {}).reduce((text, name) => {
-    const pattern = new RegExp('(?<![\\\\w$.])' + escapeRegex(name) + '(?![\\\\w])', 'g');
+    // Formula names are validated identifiers, so they are safe as regex fragments.
+    const pattern = new RegExp('(?<![\\w$.])' + name + '(?![\\w])', 'g');
     return text.replace(pattern, 'EXTERNAL_VAR.' + name);
   }, formula);
 }
 
-// Each untrusted formula runs in its own process. The parent enforces a hard wall-clock timeout.
 function evaluateFormula(formula, record, formulaValues = {}, timeoutMs = config.timeoutMs) {
   return new Promise((resolve) => {
     const workerPath = path.join(__dirname, '../workers/evaluate.js');
@@ -23,7 +20,7 @@ function evaluateFormula(formula, record, formulaValues = {}, timeoutMs = config
     const finish = (value) => { if (settled) return; settled = true; clearTimeout(timer); resolve(value); };
     const timer = setTimeout(() => {
       child.kill('SIGKILL');
-      finish({ status: 'FAILED', error: `Formula timed out after ${timeoutMs}ms`, calculationText: normalizedFormula });
+      finish({ status: 'FAILED', error: 'Formula timed out after ' + timeoutMs + 'ms', calculationText: normalizedFormula });
     }, timeoutMs);
     child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
     child.stdout.on('data', chunk => { stdout += chunk; });
