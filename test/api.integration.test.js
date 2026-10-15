@@ -94,6 +94,31 @@ test('bulk preview handles 500 records and 10 formulas within the target budget'
   assert.equal(response.body.data.results[0].results[0].result, 1);
 });
 
+test('worked example calculates commission 200, tax 36, and total 236', { skip: !enabled }, async () => {
+  const suffix = randomUUID().replace(/-/g, '').slice(0, 8);
+  const create = async (name, formula) => {
+    const response = await request(app).post('/formulas').send({
+      name: name + '_' + suffix,
+      formula,
+      createdBy: 'acceptance-test'
+    });
+    assert.equal(response.status, 201, JSON.stringify(response.body));
+    return response.body.data;
+  };
+  const commission = await create('commission', 'return EXTERNAL_VAR.amount * EXTERNAL_VAR.rate / 100');
+  const tax = await create('tax', 'return commission * 0.18');
+  const total = await create('total', 'return commission + tax');
+  const response = await request(app).post('/formulas/preview').send({
+    record: { amount: 2000, rate: 10 },
+    formulaUuids: [total.uuid]
+  });
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  const byName = Object.fromEntries(response.body.data.results.map(item => [item.name, item.result]));
+  assert.equal(byName[commission.name], 200);
+  assert.equal(byName[tax.name], 36);
+  assert.equal(byName[total.name], 236);
+});
+
 test('HTTP API protects dependencies and supports deactivate plus rollback', { skip: !enabled }, async () => {
   const suffix = randomUUID().replace(/-/g, '').slice(0, 8);
   const baseName = 'base_' + suffix;
