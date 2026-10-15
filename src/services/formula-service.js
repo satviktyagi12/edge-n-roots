@@ -13,7 +13,9 @@ async function validateFormula(name, formula, replacingUuid = null) {
   const all = await currentFormulas();
   const conflict = all.find(f => f.name === name && f.uuid !== replacingUuid);
   if (conflict) throw new AppError(400, 'DUPLICATE_NAME', 'Formula name must be unique among active formulas.');
-  const sample = await evaluateFormula(formula, { amount: 2000, rate: 10, commission: 200, tax: 36 });
+  const sampleValues = Object.fromEntries(all.map(item => [item.name, item.name === 'commission' ? 200 : item.name === 'tax' ? 36 : 1]));
+  sampleValues.commission = 200; sampleValues.tax = 36;
+  const sample = await evaluateFormula(formula, { amount: 2000, rate: 10, commission: 200, tax: 36 }, sampleValues);
   if (sample.status !== 'SUCCESS') {
     throw new AppError(400, 'INVALID_FORMULA', 'Formula failed validation against sample data.', { error: sample.error });
   }
@@ -45,11 +47,11 @@ async function createOrChange(input) {
     }
     const merged = { ...current, name: input.name ?? current.name, formula: input.formula ?? current.formula };
     await validateFormula(merged.name, merged.formula, input.uuid);
-    const [result] = await conn.execute(
-      'INSERT INTO formulas (uuid,name,formula,status,created_by,first_created_at,inserted_at,base_version_id) VALUES (?,?,?,?,?,?,?,?)',
-      [current.uuid, merged.name, merged.formula, 'ACTIVE', current.created_by, current.first_created_at, new Date(), current.id]
-    );
-    return { id: result.insertId, uuid: current.uuid, name: merged.name, formula: merged.formula, status: 'ACTIVE', created_by: current.created_by, first_created_at: current.first_created_at, base_version_id: current.id };
+    const saved = await saveRecord('formulas', {
+      uuid: current.uuid, name: merged.name, formula: merged.formula, status: 'ACTIVE',
+      created_by: current.created_by, first_created_at: current.first_created_at, base_version_id: current.id
+    }, { connection: conn });
+    return saved[0];
   } finally {
     if (locked) await conn.execute('SELECT RELEASE_LOCK(?)', [lockName]).catch(() => {});
     conn.release();
@@ -67,11 +69,11 @@ async function deactivate(uuid, expectedVersionId, force = false) {
     const active = await currentFormulas(conn);
     const dependents = active.filter(f => f.uuid !== uuid && (graphFor(active).deps.get(f.name) || []).includes(current.name));
     if (dependents.length && !force) throw new AppError(400, 'DEPENDENTS_EXIST', 'Cannot deactivate a formula used by active formulas.', { dependents: dependents.map(f => f.name) });
-    const [r] = await conn.execute(
-      'INSERT INTO formulas (uuid,name,formula,status,created_by,first_created_at,inserted_at,base_version_id) VALUES (?,?,?,?,?,?,?,?)',
-      [current.uuid,current.name,current.formula,'INACTIVE',current.created_by,current.first_created_at,new Date(),current.id]
-    );
-    return { id:r.insertId, uuid:current.uuid, name:current.name, status:'INACTIVE', base_version_id:current.id };
+    const saved = await saveRecord('formulas', {
+      uuid: current.uuid, name: current.name, formula: current.formula, status: 'INACTIVE',
+      created_by: current.created_by, first_created_at: current.first_created_at, base_version_id: current.id
+    }, { connection: conn });
+    return saved[0];
   } finally { if (locked) await conn.execute('SELECT RELEASE_LOCK(?)',[lock]).catch(()=>{}); conn.release(); }
 }
 
@@ -89,11 +91,11 @@ async function rollback(uuid, targetVersionId, expectedVersionId) {
     const all = (await currentFormulas(conn)).filter(f=>f.uuid!==uuid).concat([{...target,status:'ACTIVE'}]);
     await validateFormula(target.name,target.formula,uuid);
     executionLevels(all);
-    const [r] = await conn.execute(
-      'INSERT INTO formulas (uuid,name,formula,status,created_by,first_created_at,inserted_at,base_version_id) VALUES (?,?,?,?,?,?,?,?)',
-      [uuid,target.name,target.formula,'ACTIVE',current.created_by,current.first_created_at,new Date(),current.id]
-    );
-    return {id:r.insertId,uuid,name:target.name,formula:target.formula,status:'ACTIVE',base_version_id:current.id,rolledBackFromVersionId:target.id};
+    const saved = await saveRecord('formulas', {
+      uuid, name: target.name, formula: target.formula, status: 'ACTIVE',
+      created_by: current.created_by, first_created_at: current.first_created_at, base_version_id: current.id
+    }, { connection: conn });
+    return { ...saved[0], rolledBackFromVersionId: target.id };
   } finally { if (locked) await conn.execute('SELECT RELEASE_LOCK(?)',[lock]).catch(()=>{}); conn.release(); }
 }
 
