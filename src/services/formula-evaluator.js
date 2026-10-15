@@ -3,22 +3,32 @@ const path = require('node:path');
 const config = require('../config');
 const { round2 } = require('./rounding');
 
-// Run each untrusted formula in a separate Node process with a hard timeout.
-// The worker only receives JSON serializable input and returns a JSON envelope.
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');
+}
+function normalizeReferences(formula, formulaValues) {
+  return Object.keys(formulaValues || {}).reduce((text, name) => {
+    const pattern = new RegExp('(?<![\\\\w$.])' + escapeRegex(name) + '(?![\\\\w])', 'g');
+    return text.replace(pattern, 'EXTERNAL_VAR.' + name);
+  }, formula);
+}
+
+// Each untrusted formula runs in its own process. The parent enforces a hard wall-clock timeout.
 function evaluateFormula(formula, record, formulaValues = {}, timeoutMs = config.timeoutMs) {
   return new Promise((resolve) => {
     const workerPath = path.join(__dirname, '../workers/evaluate.js');
+    const normalizedFormula = normalizeReferences(formula, formulaValues);
     const child = spawn(process.execPath, [workerPath], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     let stdout = ''; let stderr = ''; let settled = false;
     const finish = (value) => { if (settled) return; settled = true; clearTimeout(timer); resolve(value); };
     const timer = setTimeout(() => {
       child.kill('SIGKILL');
-      finish({ status: 'FAILED', error: `Formula timed out after ${timeoutMs}ms`, calculationText: formula });
+      finish({ status: 'FAILED', error: `Formula timed out after ${timeoutMs}ms`, calculationText: normalizedFormula });
     }, timeoutMs);
     child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
     child.stdout.on('data', chunk => { stdout += chunk; });
     child.stderr.on('data', chunk => { stderr += chunk; });
-    child.on('error', err => finish({ status: 'FAILED', error: err.message, calculationText: formula }));
+    child.on('error', err => finish({ status: 'FAILED', error: err.message, calculationText: normalizedFormula }));
     child.on('close', () => {
       if (settled) return;
       try {
@@ -28,10 +38,10 @@ function evaluateFormula(formula, record, formulaValues = {}, timeoutMs = config
         if (typeof result === 'number') result = round2(result);
         finish({ ...payload, result, status: 'SUCCESS' });
       } catch {
-        finish({ status: 'FAILED', error: stderr.trim() || 'Formula worker returned invalid output', calculationText: formula });
+        finish({ status: 'FAILED', error: stderr.trim() || 'Formula worker returned invalid output', calculationText: normalizedFormula });
       }
     });
-    child.stdin.end(JSON.stringify({ formula, record, formulaValues }));
+    child.stdin.end(JSON.stringify({ formula: normalizedFormula, record, formulaValues }));
   });
 }
-module.exports = { evaluateFormula };
+module.exports = { evaluateFormula, normalizeReferences };
