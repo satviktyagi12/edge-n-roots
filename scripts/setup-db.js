@@ -4,7 +4,8 @@ const mysql=require('mysql2/promise');
 require('dotenv').config();
 const config=require('../src/config');
 (async()=>{
-  const conn=await mysql.createConnection({...config.db,multipleStatements:true});
+  const { database, ...connectionConfig } = config.db;
+  const conn=await mysql.createConnection({...connectionConfig,multipleStatements:true});
   try {
     for(const file of ['schema.sql','views.sql']) {
       const sql=await fs.readFile(path.join(__dirname,'../sql',file),'utf8');
