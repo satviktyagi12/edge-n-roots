@@ -29,7 +29,7 @@ test('a dependent formula is SKIPPED when its prerequisite fails', { skip: !enab
   const suffix = require('node:crypto').randomUUID().replace(/-/g, '').slice(0, 10);
   const failed = await saveRecord('formulas', {
     name: 'failure_' + suffix,
-    formula: 'return EXTERNAL_VAR.amount / 0',
+    formula: 'return missingFunction()',
     status: 'ACTIVE',
     created_by: 'integration-test'
   });
