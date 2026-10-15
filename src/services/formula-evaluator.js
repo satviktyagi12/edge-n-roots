@@ -4,8 +4,8 @@ const { round2 } = require('./rounding');
 
 function normalizeReferences(formula, formulaValues) {
   return Object.keys(formulaValues || {}).reduce((text, name) => {
-    // Formula names are validated identifiers, so they are safe as regex fragments.
-    const pattern = new RegExp('(?<![\w$.])' + name + '(?![\w])', 'g');
+    // Formula names are validated identifiers before they enter the database.
+    const pattern = new RegExp('(?<![\\w$.])' + name + '(?![\\w])', 'g');
     return text.replace(pattern, 'EXTERNAL_VAR.' + name);
   }, formula);
 }
