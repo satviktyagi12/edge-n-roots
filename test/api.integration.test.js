@@ -106,8 +106,8 @@ test('worked example calculates commission 200, tax 36, and total 236', { skip: 
     return response.body.data;
   };
   const commission = await create('commission', 'return EXTERNAL_VAR.amount * EXTERNAL_VAR.rate / 100');
-  const tax = await create('tax', 'return commission * 0.18');
-  const total = await create('total', 'return commission + tax');
+  const tax = await create('tax', 'return ' + commission.name + ' * 0.18');
+  const total = await create('total', 'return ' + commission.name + ' + ' + tax.name);
   const response = await request(app).post('/formulas/preview').send({
     record: { amount: 2000, rate: 10 },
     formulaUuids: [total.uuid]
