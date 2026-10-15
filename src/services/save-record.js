@@ -33,7 +33,7 @@ async function saveRecord(table, data, options = {}) {
     }
     const uuid = input[uuidColumn] || randomUUID();
     let previous = null;
-    if (input[uuidColumn]) {
+    if (input[uuidColumn] && !options.appendRows) {
       const [rows] = await connection.execute(
         `SELECT * FROM ${quoteIdentifier(table)} WHERE ${quoteIdentifier(uuidColumn)} = ? ORDER BY id DESC LIMIT 1`,
         [uuid]
