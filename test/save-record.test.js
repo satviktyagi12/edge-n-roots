@@ -1,9 +1,13 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const {saveRecord}=require('../src/services/save-record');
-test('rejects unapproved tables instead of allowing arbitrary SQL identifiers',async()=>{
-  await assert.rejects(()=>saveRecord('users',{name:'x'}),/Table is not allowed/);
+
+test('rejects unsafe table identifiers before touching the database',async()=>{
+  await assert.rejects(()=>saveRecord('formulas; DROP TABLE formulas',{name:'x'}),/Invalid table or column identifier/);
 });
-test('accepts only UUID as the configured logical key',async()=>{
-  await assert.rejects(()=>saveRecord('formulas',{name:'x'},{uuidColumn:'id'}),/Unsupported UUID column/);
+test('rejects unsafe UUID column identifiers before touching the database',async()=>{
+  await assert.rejects(()=>saveRecord('formulas',{name:'x'},{uuidColumn:'uuid; DROP'}),/Invalid table or column identifier/);
+});
+test('empty array returns without issuing a database query',async()=>{
+  assert.deepEqual(await saveRecord('formulas',[]),[]);
 });
