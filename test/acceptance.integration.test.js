@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const pool = require('../src/db/pool');
+test.after(async () => { await pool.end(); });
 
 // Opt in only against a dedicated test database: these tests intentionally append
 // permanent version rows because business records are insert-only.
