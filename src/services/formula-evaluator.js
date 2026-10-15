@@ -27,6 +27,7 @@ function simpleArithmeticScript(formula) {
   // Keep this fast path deliberately narrow: arithmetic/comparison expressions
   // over primitive values and EXTERNAL_VAR fields only; no calls or statements.
   if (!expression || !/^[A-Za-z0-9_$\s.()+*/%<>=!&|?:-]+$/.test(expression)) return null;
+  if (/[A-Za-z_$][A-Za-z0-9_$]*\s*\(/.test(expression)) return null;
   const identifiers = [...expression.matchAll(/[A-Za-z_$][A-Za-z0-9_$]*/g)];
   for (const token of identifiers) {
     const name = token[0];
