@@ -39,7 +39,7 @@ test('a dependent formula is SKIPPED when its prerequisite fails', { skip: !enab
     status: 'ACTIVE',
     created_by: 'integration-test'
   });
-  const result = await previewRecord({ amount: 1 });
+  const result = await previewRecord({ amount: 1 }, [dependent[0].uuid]);
   const dependentResult = result.results.find(item => item.uuid === dependent[0].uuid);
   assert.ok(dependentResult);
   assert.equal(dependentResult.status, 'SKIPPED');
