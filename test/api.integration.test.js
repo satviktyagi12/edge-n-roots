@@ -88,4 +88,6 @@ test('bulk preview handles 500 records and 10 formulas within 30 seconds', { ski
   assert.equal(response.body.data.results.length, 500);
   assert.ok(elapsed < 30000, '500 x 10 formula preview took ' + elapsed + 'ms (limit 30000ms)');
   assert.equal(response.body.data.metrics.records, 500);
+  assert.equal(response.body.data.metrics.failures, 0, 'all bulk formulas must succeed');
+  assert.equal(response.body.data.results[0].results[0].result, 1);
 });
