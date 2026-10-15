@@ -11,8 +11,8 @@ function integer(name, fallback, min, max) {
 module.exports = Object.freeze({
   port: integer('PORT', 3000, 1, 65535),
   timeoutMs: integer('FORMULA_TIMEOUT_MS', 1000, 50, 10000),
-  previewConcurrency: integer('PREVIEW_CONCURRENCY', 8, 1, 64),
-  bulkConcurrency: integer('BULK_CONCURRENCY', 5, 1, 32),
+  previewConcurrency: integer('PREVIEW_CONCURRENCY', 12, 1, 64),
+  bulkConcurrency: integer('BULK_CONCURRENCY', 10, 1, 32),
   maxBulkRecords: integer('MAX_BULK_RECORDS', 500, 1, 500),
   db: {
     host: process.env.DB_HOST || '127.0.0.1',
