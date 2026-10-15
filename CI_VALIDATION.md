@@ -1,0 +1,1 @@
+Temporary branch commit to trigger the repository's MySQL-backed GitHub Actions test workflow. This file can be removed after CI validation.
