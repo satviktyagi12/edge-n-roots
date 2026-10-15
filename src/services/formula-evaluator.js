@@ -77,9 +77,9 @@ function evaluateSimpleArithmetic(formula, record, formulaValues, timeoutMs) {
 
 function librariesFor(formula) {
   const libraries = [];
-  if (/\\b(?:IF|AND|OR|XOR)\\s*\\(/i.test(formula)) libraries.push('LOGICAL');
-  if (/\\b(?:SUM|ROUND|INT)\\s*\\(/i.test(formula)) libraries.push('MATHS');
-  if (/\\b(?:CONCATSTR|STRLENGTH)\\s*\\(/i.test(formula)) libraries.push('STRING');
+  if (/\b(?:IF|AND|OR|XOR)\s*\(/i.test(formula)) libraries.push('LOGICAL');
+  if (/\b(?:SUM|ROUND|INT)\s*\(/i.test(formula)) libraries.push('MATHS');
+  if (/\b(?:CONCATSTR|STRLENGTH)\s*\(/i.test(formula)) libraries.push('STRING');
   return libraries;
 }
 
@@ -117,7 +117,7 @@ async function evaluateFormula(formula, record, formulaValues = {}, timeoutMs = 
   const fastResult = evaluateSimpleArithmetic(normalizedFormula, record, formulaValues, timeoutMs);
   if (fastResult) return fastResult;
 
-  const libraryFormula = normalizedFormula.replace(/EXTERNAL_VAR\\s*\\./g, 'EXTERNAL_VAR.CODE.');
+  const libraryFormula = normalizedFormula.replace(/EXTERNAL_VAR\s*\./g, 'EXTERNAL_VAR.CODE.');
   const payload = { CODE: { ...(record || {}), ...(formulaValues || {}) } };
   const libraries = librariesFor(normalizedFormula);
   try {
