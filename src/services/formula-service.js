@@ -26,11 +26,22 @@ async function validateFormula(name, formula, replacingUuid = null) {
 
 async function createOrChange(input) {
   if (!input.uuid) {
-    await validateFormula(input.name, input.formula);
-    return (await saveRecord('formulas', {
-      name: input.name, formula: input.formula, status: 'ACTIVE',
-      created_by: input.createdBy
-    }))[0];
+    const conn = await pool.getConnection();
+    const nameLock = `formula-name:${input.name}`;
+    let locked = false;
+    try {
+      const [lockRows] = await conn.execute('SELECT GET_LOCK(?, 10) AS acquired', [nameLock]);
+      locked = lockRows[0]?.acquired === 1;
+      if (!locked) throw new AppError(409, 'CONCURRENT_MODIFICATION', 'Could not acquire formula-name lock; retry the request.');
+      await validateFormula(input.name, input.formula);
+      return (await saveRecord('formulas', {
+        name: input.name, formula: input.formula, status: 'ACTIVE',
+        created_by: input.createdBy
+      }, { connection: conn }))[0];
+    } finally {
+      if (locked) await conn.execute('SELECT RELEASE_LOCK(?)', [nameLock]).catch(() => {});
+      conn.release();
+    }
   }
   // MySQL advisory lock serializes same-formula writes across app instances.
   const lockName = `formula:${input.uuid}`;
