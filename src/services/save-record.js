@@ -2,52 +2,68 @@ const { randomUUID } = require('node:crypto');
 const pool = require('../db/pool');
 const { AppError } = require('../utils/errors');
 
-// Generic append-only writer. Table and column identifiers are allow-listed; all values
-// are parameterized. The caller must use a transaction when coordinating version checks.
-const ALLOWED_TABLES = new Set(['formulas']);
-const COLUMNS = {
-  formulas: ['uuid','name','formula','status','created_by','first_created_at','inserted_at','base_version_id']
-};
 function quoteIdentifier(value) {
-  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(value)) throw new AppError(400, 'INVALID_TABLE', 'Invalid table or column identifier.');
+  if (typeof value !== 'string' || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(value)) {
+    throw new AppError(400, 'INVALID_IDENTIFIER', 'Invalid table or column identifier.');
+  }
   return '`' + value + '`';
 }
+
+// Generic append-only save. Table/column names are validated and table columns are
+// discovered from the selected database; every data value is passed as a bind parameter.
 async function saveRecord(table, data, options = {}) {
-  if (!ALLOWED_TABLES.has(table)) throw new AppError(400, 'INVALID_TABLE', 'Table is not allowed for insert-only writes.');
+  quoteIdentifier(table);
   const uuidColumn = options.uuidColumn || 'uuid';
-  if (uuidColumn !== 'uuid') throw new AppError(400, 'INVALID_UUID_COLUMN', 'Unsupported UUID column.');
+  quoteIdentifier(uuidColumn);
   const records = Array.isArray(data) ? data : [data];
   if (!records.length) return [];
   const connection = options.connection || pool;
-  const saved = [];
+  const [metadata] = await connection.execute(
+    'SELECT COLUMN_NAME, EXTRA, COLUMN_DEFAULT, IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION',
+    [table]
+  );
+  if (!metadata.length) throw new AppError(400, 'INVALID_TABLE', 'Table does not exist in the configured database.');
+  const columns = metadata.filter(c => !String(c.EXTRA).includes('auto_increment')).map(c=>c.COLUMN_NAME);
+  if (!columns.includes(uuidColumn)) throw new AppError(400, 'INVALID_UUID_COLUMN', 'The configured UUID column does not exist in this table.');
+  if (!columns.includes('id')) throw new AppError(400, 'INVALID_TABLE', 'Insert-only records require an auto-increment id column.');
+  const prepared = [];
   for (const input of records) {
-    const now = new Date();
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      throw new AppError(400, 'INVALID_RECORD', 'Each record must be an object.');
+    }
+    const uuid = input[uuidColumn] || randomUUID();
     let previous = null;
-    const uuid = input.uuid || randomUUID();
-    if (input.uuid) {
+    if (input[uuidColumn]) {
       const [rows] = await connection.execute(
-        `SELECT * FROM ${quoteIdentifier(table)} WHERE ${quoteIdentifier(uuidColumn)} = ? ORDER BY id DESC LIMIT 1`, [uuid]
+        `SELECT * FROM ${quoteIdentifier(table)} WHERE ${quoteIdentifier(uuidColumn)} = ? ORDER BY id DESC LIMIT 1`,
+        [uuid]
       );
       previous = rows[0] || null;
       if (!previous) throw new AppError(404, 'RECORD_NOT_FOUND', 'Cannot change a record that does not exist.');
     }
-    const merged = {
-      uuid,
-      name: input.name ?? previous?.name,
-      formula: input.formula ?? previous?.formula,
-      status: input.status ?? previous?.status ?? 'ACTIVE',
-      created_by: previous?.created_by ?? input.created_by ?? input.createdBy ?? 'api',
-      first_created_at: previous?.first_created_at ?? now,
-      inserted_at: now,
-      base_version_id: input.base_version_id ?? previous?.id ?? null
-    };
-    const columns = COLUMNS[table];
-    const vals = columns.map(c => merged[c]);
-    const [result] = await connection.execute(
-      `INSERT INTO ${quoteIdentifier(table)} (${columns.map(quoteIdentifier).join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`, vals
-    );
-    saved.push({ id: result.insertId, ...merged });
+    const merged = { ...(previous || {}), ...input, [uuidColumn]: uuid };
+    const now = new Date();
+    if (columns.includes('first_created_at')) merged.first_created_at = previous?.first_created_at || input.first_created_at || now;
+    if (columns.includes('created_at') && !previous) merged.created_at = input.created_at || now;
+    if (columns.includes('inserted_at')) merged.inserted_at = now;
+    // Never carry the prior auto-increment id into the new version.
+    delete merged.id;
+    prepared.push({ uuid, merged, previous });
   }
-  return saved;
+  const insertColumns = columns.filter(c => prepared.some(p => Object.prototype.hasOwnProperty.call(p.merged,c)) || !['first_created_at','created_at','inserted_at'].includes(c));
+  const values = prepared.map(({merged})=>insertColumns.map(column=>{
+    if (Object.prototype.hasOwnProperty.call(merged,column)) return merged[column];
+    const meta=metadata.find(c=>c.COLUMN_NAME===column);
+    if (meta?.COLUMN_DEFAULT !== null && meta?.COLUMN_DEFAULT !== undefined) return meta.COLUMN_DEFAULT;
+    if (meta?.IS_NULLABLE === 'YES') return null;
+    throw new AppError(400,'MISSING_FIELD',`Required field "${column}" is missing.`);
+  }));
+  const placeholders = values.map(row=>'('+row.map(()=>'?').join(', ')+')').join(', ');
+  const flatValues=values.flat();
+  const [result]=await connection.execute(
+    `INSERT INTO ${quoteIdentifier(table)} (${insertColumns.map(quoteIdentifier).join(', ')}) VALUES ${placeholders}`,
+    flatValues
+  );
+  return prepared.map(({uuid,merged},index)=>({id:result.insertId+index,...merged,[uuidColumn]:uuid}));
 }
-module.exports = { saveRecord };
+module.exports={saveRecord};
