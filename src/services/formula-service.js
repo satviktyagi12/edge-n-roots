@@ -47,6 +47,8 @@ async function createOrChange(input) {
   const lockName = `formula:${input.uuid}`;
   const conn = await pool.getConnection();
   let locked = false;
+  let nameLocked = false;
+  let nameLock = null;
   try {
     const [lockRows] = await conn.execute('SELECT GET_LOCK(?, 10) AS acquired', [lockName]);
     locked = lockRows[0]?.acquired === 1;
@@ -57,6 +59,10 @@ async function createOrChange(input) {
       throw new AppError(409, 'VERSION_CONFLICT', 'Formula has changed since the version you last saw.', { currentVersion: current });
     }
     const merged = { ...current, name: input.name ?? current.name, formula: input.formula ?? current.formula };
+    nameLock = `formula-name:${merged.name}`;
+    const [nameLockRows] = await conn.execute('SELECT GET_LOCK(?, 10) AS acquired', [nameLock]);
+    nameLocked = nameLockRows[0]?.acquired === 1;
+    if (!nameLocked) throw new AppError(409, 'CONCURRENT_MODIFICATION', 'Could not acquire formula-name lock; retry the request.');
     if (merged.name !== current.name) {
       const active = await currentFormulas(conn);
       const dependencies = graphFor(active).deps;
@@ -72,6 +78,7 @@ async function createOrChange(input) {
     }, { connection: conn });
     return saved[0];
   } finally {
+    if (nameLocked && nameLock) await conn.execute('SELECT RELEASE_LOCK(?)', [nameLock]).catch(() => {});
     if (locked) await conn.execute('SELECT RELEASE_LOCK(?)', [lockName]).catch(() => {});
     conn.release();
   }
