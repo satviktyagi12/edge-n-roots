@@ -86,6 +86,7 @@ test('bulk preview handles 500 records and 10 formulas within the target budget'
   const started = Date.now();
   const response = await request(app).post('/formulas/preview/bulk').send({ records, formulaUuids });
   const elapsed = Date.now() - started;
+  console.log('Bulk preview benchmark: 500 records x 10 formulas in ' + elapsed + 'ms (limit ' + bulkLimitMs + 'ms)');
   assert.equal(response.status, 200, JSON.stringify(response.body).slice(0, 2000));
   assert.equal(response.body.data.results.length, 500);
   assert.ok(elapsed < bulkLimitMs, '500 x 10 formula preview took ' + elapsed + 'ms (limit ' + bulkLimitMs + 'ms)');
