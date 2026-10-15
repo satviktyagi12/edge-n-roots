@@ -66,3 +66,26 @@ test('POST /formulas rejects a malformed create payload with a consistent error'
   assert.equal(response.status, 400);
   assert.equal(response.body.error.code, 'VALIDATION_ERROR');
 });
+
+test('bulk preview handles 500 records and 10 formulas within 30 seconds', { skip: !enabled, timeout: 60000 }, async () => {
+  const suffix = randomUUID().replace(/-/g, '').slice(0, 8);
+  const formulaUuids = [];
+  for (let i = 1; i <= 10; i++) {
+    const response = await request(app).post('/formulas').send({
+      name: 'bulk_' + suffix + '_' + i,
+      formula: 'return EXTERNAL_VAR.amount * ' + i,
+      createdBy: 'bulk-performance-test'
+    });
+    assert.equal(response.status, 201, JSON.stringify(response.body));
+    formulaUuids.push(response.body.data.uuid);
+  }
+
+  const records = Array.from({ length: 500 }, (_, i) => ({ amount: i + 1 }));
+  const started = Date.now();
+  const response = await request(app).post('/formulas/preview/bulk').send({ records, formulaUuids });
+  const elapsed = Date.now() - started;
+  assert.equal(response.status, 200, JSON.stringify(response.body).slice(0, 2000));
+  assert.equal(response.body.data.results.length, 500);
+  assert.ok(elapsed < 30000, '500 x 10 formula preview took ' + elapsed + 'ms (limit 30000ms)');
+  assert.equal(response.body.data.metrics.records, 500);
+});
