@@ -17,29 +17,33 @@ async function formulasAt(asOf) {
   return rows;
 }
 
-async function previewRecord(record, formulaUuids, asOf, options = {}) {
-  const started = Date.now(); const runUuid = options.runUuid || randomUUID();
-  let formulas = await formulasAt(asOf);
-  if (formulaUuids?.length) {
-    const selected = new Set(formulaUuids);
-    formulas = formulas.filter(f => selected.has(f.uuid));
-    // Include transitive prerequisites for requested formulas.
-    const all = await formulasAt(asOf);
-    const byName = new Map(all.map(f=>[f.name,f]));
-    const needed = new Set(formulas.map(f=>f.name));
-    let progress = true;
-    while (progress) {
-      progress = false;
-      for (const f of all) {
-        if (!needed.has(f.name)) continue;
-        const names = f.formula.match(/\b[A-Za-z_][A-Za-z0-9_]*\b/g)||[];
-        for (const n of names) if (byName.has(n)&&!needed.has(n)) {needed.add(n);progress=true;}
+function selectFormulas(all, formulaUuids) {
+  if (!formulaUuids?.length) return all;
+  const selected = new Set(formulaUuids);
+  const byName = new Map(all.map(formula => [formula.name, formula]));
+  const needed = new Set(all.filter(formula => selected.has(formula.uuid)).map(formula => formula.name));
+  let progress = true;
+  while (progress) {
+    progress = false;
+    for (const formula of all) {
+      if (!needed.has(formula.name)) continue;
+      const names = formula.formula.match(/\b[A-Za-z_][A-Za-z0-9_]*\b/g) || [];
+      for (const name of names) {
+        if (byName.has(name) && !needed.has(name)) {
+          needed.add(name);
+          progress = true;
+        }
       }
     }
-    formulas = all.filter(f=>needed.has(f.name));
   }
+  return all.filter(formula => needed.has(formula.name));
+}
+
+async function previewRecord(record, formulaUuids, asOf, options = {}) {
+  const started = Date.now(); const runUuid = options.runUuid || randomUUID();
+  const formulas = options.formulas || selectFormulas(await formulasAt(asOf), formulaUuids);
   assertKnownInputs(formulas, record);
-  const levels = executionLevels(formulas);
+  const levels = options.levels || executionLevels(formulas);
   const values = {}; const results = []; const logs = [];
   const levelLimit = pLimit(config.previewConcurrency);
   for (const level of levels) {
@@ -86,11 +90,22 @@ async function previewBulk(records, formulaUuids, asOf) {
   }
   const limit = pLimit(config.bulkConcurrency); const started = Date.now();
   const runUuid = randomUUID();
-  const results = await Promise.all(records.map(record=>limit(()=>previewRecord(record,formulaUuids,asOf,{deferLogs:true,runUuid}))));
+  // Resolve the formula set and dependency graph once, not once per input record.
+  const formulas = selectFormulas(await formulasAt(asOf), formulaUuids);
+  const levels = executionLevels(formulas);
+  let completedRecords = 0;
+  const results = await Promise.all(records.map(record => limit(async () => {
+    const result = await previewRecord(record, formulaUuids, asOf, { deferLogs:true, runUuid, formulas, levels });
+    completedRecords++;
+    if (process.env.NODE_ENV === 'test' && completedRecords % 50 === 0) console.log('[bulk-preview] completed records:', completedRecords);
+    return result;
+  })));
   const logs = results.flatMap(result => result._logs || []);
   results.forEach(result => { delete result._logs; });
   // One multi-row insert for the entire bulk run; every row shares this request's run UUID.
+  if (process.env.NODE_ENV === 'test') console.log('[bulk-preview] inserting run logs:', logs.length);
   await insertRunLogs(logs);
+  if (process.env.NODE_ENV === 'test') console.log('[bulk-preview] run logs inserted');
   const elapsedMs=Date.now()-started;
   return {runUuid,results,metrics:{totalTimeMs:elapsedMs,averageTimePerRecordMs:Number((elapsedMs/records.length).toFixed(2)),failures:results.reduce((n,r)=>n+r.metrics.failures,0),records:records.length}};
 }
