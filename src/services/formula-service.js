@@ -46,6 +46,14 @@ async function createOrChange(input) {
       throw new AppError(409, 'VERSION_CONFLICT', 'Formula has changed since the version you last saw.', { currentVersion: current });
     }
     const merged = { ...current, name: input.name ?? current.name, formula: input.formula ?? current.formula };
+    if (merged.name !== current.name) {
+      const active = await currentFormulas(conn);
+      const dependencies = graphFor(active).deps;
+      const dependents = active.filter(f => f.uuid !== current.uuid && (dependencies.get(f.name) || []).includes(current.name));
+      if (dependents.length && !input.force) {
+        throw new AppError(400, 'DEPENDENTS_EXIST', 'Cannot rename a formula used by active formulas unless force is true.', { dependents: dependents.map(f => f.name) });
+      }
+    }
     await validateFormula(merged.name, merged.formula, input.uuid);
     const saved = await saveRecord('formulas', {
       uuid: current.uuid, name: merged.name, formula: merged.formula, status: 'ACTIVE',
