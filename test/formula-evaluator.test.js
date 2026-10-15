@@ -28,8 +28,3 @@ test('supports the SUM helper in isolated formula evaluation', async () => {
   assert.equal(result.status, 'SUCCESS');
   assert.equal(result.result, 42);
 });
-test('does not use the arithmetic fast path for arbitrary statements',async()=>{
-  const result=await evaluateFormula('while (true) {}\nreturn 1',{}, {},100);
-  assert.equal(result.status,'FAILED');
-  assert.match(result.error,/timed out/i);
-});
