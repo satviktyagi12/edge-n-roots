@@ -18,39 +18,43 @@ rl.on('close', async () => {
       ROUND: (value, places = 0) => Number(Number(value).toFixed(Number(places))),
       Math
     };
-    let result;
-    let libraryError = null;
+
+    // The assignment package exports a named interpretor function. Its calculation
+    // explainer understands EXTERNAL_VAR.CODE paths, so map the input object there.
     try {
       const library = require('formula-interpreter');
-      let response;
-      if (typeof library === 'function') response = await library(formula, { EXTERNAL_VAR: data }, { timeout: 800 });
-      else if (typeof library.evaluate === 'function') response = await library.evaluate(formula, { EXTERNAL_VAR: data }, { timeout: 800 });
-      else if (typeof library.interpret === 'function') response = await library.interpret(formula, { EXTERNAL_VAR: data }, { timeout: 800 });
-      if (response !== undefined && response !== null &&
-          !(typeof response === 'object' && response.error) &&
-          String(response.status || 'SUCCESS').toUpperCase() !== 'FAILED') {
-        result = typeof response === 'object' ? (response.result ?? response.value) : response;
-        if (result !== undefined) {
+      if (typeof library.interpretor === 'function') {
+        const libraryFormula = formula.replace(/EXTERNAL_VAR\s*\./g, 'EXTERNAL_VAR.CODE.');
+        const response = await library.interpretor(
+          libraryFormula,
+          ['LOGICAL', 'MATHS', 'STRING'],
+          { CODE: data },
+          { timeout: 800, memoryInMB: 32 }
+        );
+        if (response && response.status === 1) {
           process.stdout.write(JSON.stringify({
             status: 'SUCCESS',
-            result,
-            inputs: response.inputs || data,
-            calculationText: response.calculationText || response.calculation || formula
+            result: response.data,
+            inputs: data,
+            calculationText: response.calculation || formula
           }));
           return;
         }
+        if (response?.error && !/EXTERNAL_VAR\.[A-Za-z_$][\w$]*/.test(formula)) {
+          throw new Error(response.error);
+        }
       }
-      if (response?.error) libraryError = String(response.error);
     } catch (error) {
-      libraryError = error.message;
+      // Fall back only in this disposable worker; the parent independently enforces a timeout.
+      if (error?.message && /Timed out/.test(error.message)) throw error;
     }
-    // Isolated fallback for package/API mismatch; the parent also enforces a hard timeout.
+
     const script = '(function(){' + formula + '\n})()';
-    result = vm.runInNewContext(script, context, {
+    const result = vm.runInNewContext(script, context, {
       timeout: 800,
       contextCodeGeneration: { strings: false, wasm: false }
     });
-    if (typeof result === 'undefined') throw new Error(libraryError || 'Formula did not return a value.');
+    if (typeof result === 'undefined') throw new Error('Formula did not return a value.');
     const substituted = formula.replace(/EXTERNAL_VAR\s*\.\s*([A-Za-z_$][\w$]*)/g,
       (match, key) => Object.prototype.hasOwnProperty.call(data, key) ? JSON.stringify(data[key]) : match);
     process.stdout.write(JSON.stringify({
