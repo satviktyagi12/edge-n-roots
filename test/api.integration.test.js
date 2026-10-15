@@ -93,3 +93,54 @@ test('bulk preview handles 500 records and 10 formulas within the target budget'
   assert.equal(response.body.data.metrics.failures, 0, 'all bulk formulas must succeed');
   assert.equal(response.body.data.results[0].results[0].result, 1);
 });
+
+test('HTTP API protects dependencies and supports deactivate plus rollback', { skip: !enabled }, async () => {
+  const suffix = randomUUID().replace(/-/g, '').slice(0, 8);
+  const baseName = 'base_' + suffix;
+  const dependentName = 'dependent_' + suffix;
+  const baseResponse = await request(app).post('/formulas').send({
+    name: baseName,
+    formula: 'return EXTERNAL_VAR.amount + 1',
+    createdBy: 'api-lifecycle-test'
+  });
+  assert.equal(baseResponse.status, 201, JSON.stringify(baseResponse.body));
+  const base = baseResponse.body.data;
+
+  const dependentResponse = await request(app).post('/formulas').send({
+    name: dependentName,
+    formula: 'return ' + baseName + ' + 1',
+    createdBy: 'api-lifecycle-test'
+  });
+  assert.equal(dependentResponse.status, 201, JSON.stringify(dependentResponse.body));
+  const dependent = dependentResponse.body.data;
+
+  const impact = await request(app).get('/formulas/' + base.uuid + '/impact');
+  assert.equal(impact.status, 200);
+  assert.ok(impact.body.data.some(formula => formula.uuid === dependent.uuid));
+
+  const blocked = await request(app).post('/formulas/' + base.uuid + '/deactivate').send({
+    expectedVersionId: base.id,
+    force: false
+  });
+  assert.equal(blocked.status, 400);
+  assert.equal(blocked.body.error.code, 'DEPENDENTS_EXIST');
+
+  const deactivatedResponse = await request(app).post('/formulas/' + base.uuid + '/deactivate').send({
+    expectedVersionId: base.id,
+    force: true
+  });
+  assert.equal(deactivatedResponse.status, 200, JSON.stringify(deactivatedResponse.body));
+  const deactivated = deactivatedResponse.body.data;
+  assert.equal(deactivated.status, 'INACTIVE');
+
+  const rollback = await request(app).post('/formulas/' + base.uuid + '/rollback').send({
+    expectedVersionId: deactivated.id,
+    targetVersionId: base.id
+  });
+  assert.equal(rollback.status, 200, JSON.stringify(rollback.body));
+  assert.equal(rollback.body.data.status, 'ACTIVE');
+
+  const history = await request(app).get('/formulas/' + base.uuid + '/history');
+  assert.equal(history.status, 200);
+  assert.equal(history.body.data.length, 3);
+});
