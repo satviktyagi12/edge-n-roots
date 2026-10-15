@@ -67,9 +67,9 @@ test('POST /formulas rejects a malformed create payload with a consistent error'
   assert.equal(response.body.error.code, 'VALIDATION_ERROR');
 });
 
-const ciBulkLimitMs = process.env.CI === 'true' ? 150000 : 30000;
-const ciBulkTestTimeoutMs = process.env.CI === 'true' ? 180000 : 60000;
-test('bulk preview handles 500 records and 10 formulas within the target budget', { skip: !enabled, timeout: ciBulkTestTimeoutMs }, async () => {
+const bulkLimitMs = 30000;
+const bulkTestTimeoutMs = 60000;
+test('bulk preview handles 500 records and 10 formulas within the target budget', { skip: !enabled, timeout: bulkTestTimeoutMs }, async () => {
   const suffix = randomUUID().replace(/-/g, '').slice(0, 8);
   const formulaUuids = [];
   for (let i = 1; i <= 10; i++) {
@@ -88,7 +88,7 @@ test('bulk preview handles 500 records and 10 formulas within the target budget'
   const elapsed = Date.now() - started;
   assert.equal(response.status, 200, JSON.stringify(response.body).slice(0, 2000));
   assert.equal(response.body.data.results.length, 500);
-  assert.ok(elapsed < ciBulkLimitMs, '500 x 10 formula preview took ' + elapsed + 'ms (limit ' + ciBulkLimitMs + 'ms)');
+  assert.ok(elapsed < bulkLimitMs, '500 x 10 formula preview took ' + elapsed + 'ms (limit ' + bulkLimitMs + 'ms)');
   assert.equal(response.body.data.metrics.records, 500);
   assert.equal(response.body.data.metrics.failures, 0, 'all bulk formulas must succeed');
   assert.equal(response.body.data.results[0].results[0].result, 1);
