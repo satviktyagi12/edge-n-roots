@@ -15,3 +15,8 @@ test('kills a formula that exceeds the parent timeout',async()=>{
   assert.equal(result.status,'FAILED');
   assert.match(result.error,/timed out/i);
 });
+test('supports the SUM helper in isolated formula evaluation', async () => {
+  const result = await evaluateFormula('return SUM(EXTERNAL_VAR.amount, 20)', { amount: 22 }, {});
+  assert.equal(result.status, 'SUCCESS');
+  assert.equal(result.result, 42);
+});
