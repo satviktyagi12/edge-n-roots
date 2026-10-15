@@ -1,0 +1,24 @@
+{
+  "name": "edgenroots-formula-engine",
+  "version": "1.0.0",
+  "description": "Versioned, explainable formula engine for Edgenroots backend assignment",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test",
+    "db:setup": "node scripts/setup-db.js"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "formula-interpreter": "^1.0.0",
+    "mysql2": "^3.12.0",
+    "p-limit": "^6.2.0",
+    "uuid": "^11.0.5",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": { "supertest": "^7.0.0" }
+}
