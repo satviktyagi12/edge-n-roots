@@ -26,15 +26,19 @@ rl.on('close', async () => {
       if (typeof library === 'function') response = await library(formula, { EXTERNAL_VAR: data }, { timeout: 800 });
       else if (typeof library.evaluate === 'function') response = await library.evaluate(formula, { EXTERNAL_VAR: data }, { timeout: 800 });
       else if (typeof library.interpret === 'function') response = await library.interpret(formula, { EXTERNAL_VAR: data }, { timeout: 800 });
-      if (response && !response.error && String(response.status || 'SUCCESS').toUpperCase() !== 'FAILED') {
-        result = response.result ?? response.value;
-        process.stdout.write(JSON.stringify({
-          status: 'SUCCESS',
-          result,
-          inputs: response.inputs || data,
-          calculationText: response.calculationText || response.calculation || formula
-        }));
-        return;
+      if (response !== undefined && response !== null &&
+          !(typeof response === 'object' && response.error) &&
+          String(response.status || 'SUCCESS').toUpperCase() !== 'FAILED') {
+        result = typeof response === 'object' ? (response.result ?? response.value) : response;
+        if (result !== undefined) {
+          process.stdout.write(JSON.stringify({
+            status: 'SUCCESS',
+            result,
+            inputs: response.inputs || data,
+            calculationText: response.calculationText || response.calculation || formula
+          }));
+          return;
+        }
       }
       if (response?.error) libraryError = String(response.error);
     } catch (error) {
