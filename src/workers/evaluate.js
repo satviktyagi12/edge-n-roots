@@ -14,6 +14,10 @@ rl.on('close', async () => {
       IF: (condition, yes, no) => condition ? yes : no,
       AND: (...values) => values.every(Boolean),
       OR: (...values) => values.some(Boolean),
+      XOR: (...values) => values.filter(Boolean).length % 2 === 1,
+      INT: value => Math.trunc(Number(value)),
+      CONCATSTR: (...values) => values.join(''),
+      STRLENGTH: value => String(value).length,
       SUM: (...values) => values.flat().reduce((sum, value) => sum + Number(value || 0), 0),
       ROUND: (value, places = 0) => Number(Number(value).toFixed(Number(places))),
       Math
