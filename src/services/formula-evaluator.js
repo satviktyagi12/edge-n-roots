@@ -1,8 +1,17 @@
 const interpreter = require('formula-interpreter');
+const vm = require('node:vm');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
 const config = require('../config');
 const { round2 } = require('./rounding');
+
+// Simple arithmetic formulas are common in bulk previews. Compile them once and
+// execute them in a restricted VM context instead of paying the interpreter's
+// parsing/explanation overhead for every record. Complex formulas still use the
+// assignment's formula-interpreter package and isolated-worker fallback.
+const simpleFormulaCache = new Map();
+const SIMPLE_CACHE_LIMIT = 512;
+const UNSAFE_PROPERTIES = new Set(['__proto__', 'prototype', 'constructor']);
 
 function normalizeReferences(formula, formulaValues) {
   return Object.keys(formulaValues || {}).reduce((text, name) => {
@@ -11,11 +20,65 @@ function normalizeReferences(formula, formulaValues) {
   }, formula);
 }
 
+function simpleArithmeticScript(formula) {
+  const match = /^\\s*return\\s+([\\s\\S]*?)\\s*;?\\s*$/.exec(formula);
+  if (!match) return null;
+  const expression = match[1];
+  // Keep this fast path deliberately narrow: arithmetic/comparison expressions
+  // over primitive values and EXTERNAL_VAR fields only; no calls or statements.
+  if (!expression || !/^[A-Za-z0-9_$\\s.()+\\-*/%<>=!&|?:]+$/.test(expression)) return null;
+  const identifiers = [...expression.matchAll(/[A-Za-z_$][A-Za-z0-9_$]*/g)];
+  for (const token of identifiers) {
+    const name = token[0];
+    const before = expression.slice(0, token.index).trimEnd();
+    if (name === 'EXTERNAL_VAR' || ['true', 'false', 'null'].includes(name)) continue;
+    if (before.endsWith('.')) {
+      if (UNSAFE_PROPERTIES.has(name)) return null;
+      continue;
+    }
+    return null;
+  }
+  if (/\\.\\s*(?:__proto__|prototype|constructor)\\b/.test(expression)) return null;
+  try {
+    return new vm.Script('(' + expression + ')', { filename: 'formula-fast-path.vm' });
+  } catch {
+    return null;
+  }
+}
+
+function evaluateSimpleArithmetic(formula, record, formulaValues, timeoutMs) {
+  let script = simpleFormulaCache.get(formula);
+  if (script === undefined) {
+    script = simpleArithmeticScript(formula) || null;
+    if (simpleFormulaCache.size >= SIMPLE_CACHE_LIMIT) simpleFormulaCache.delete(simpleFormulaCache.keys().next().value);
+    simpleFormulaCache.set(formula, script);
+  }
+  if (!script) return null;
+  try {
+    const data = { ...(record || {}), ...(formulaValues || {}) };
+    const result = script.runInNewContext({ EXTERNAL_VAR: data }, {
+      timeout: Math.min(timeoutMs, 100),
+      contextCodeGeneration: { strings: false, wasm: false }
+    });
+    if (typeof result === 'undefined') {
+      return { status: 'FAILED', error: 'Formula did not return a value.', calculationText: formula, inputs: data };
+    }
+    return {
+      status: 'SUCCESS',
+      result: typeof result === 'number' ? round2(result) : result,
+      inputs: data,
+      calculationText: formula
+    };
+  } catch (error) {
+    return { status: 'FAILED', error: error.message, calculationText: formula, inputs: { ...(record || {}), ...(formulaValues || {}) } };
+  }
+}
+
 function librariesFor(formula) {
   const libraries = [];
-  if (/\b(?:IF|AND|OR|XOR)\s*\(/i.test(formula)) libraries.push('LOGICAL');
-  if (/\b(?:SUM|ROUND|INT)\s*\(/i.test(formula)) libraries.push('MATHS');
-  if (/\b(?:CONCATSTR|STRLENGTH)\s*\(/i.test(formula)) libraries.push('STRING');
+  if (/\\b(?:IF|AND|OR|XOR)\\s*\\(/i.test(formula)) libraries.push('LOGICAL');
+  if (/\\b(?:SUM|ROUND|INT)\\s*\\(/i.test(formula)) libraries.push('MATHS');
+  if (/\\b(?:CONCATSTR|STRLENGTH)\\s*\\(/i.test(formula)) libraries.push('STRING');
   return libraries;
 }
 
@@ -50,7 +113,10 @@ function evaluateWithWorker(formula, record, formulaValues, timeoutMs) {
 
 async function evaluateFormula(formula, record, formulaValues = {}, timeoutMs = config.timeoutMs) {
   const normalizedFormula = normalizeReferences(formula, formulaValues);
-  const libraryFormula = normalizedFormula.replace(/EXTERNAL_VAR\s*\./g, 'EXTERNAL_VAR.CODE.');
+  const fastResult = evaluateSimpleArithmetic(normalizedFormula, record, formulaValues, timeoutMs);
+  if (fastResult) return fastResult;
+
+  const libraryFormula = normalizedFormula.replace(/EXTERNAL_VAR\\s*\\./g, 'EXTERNAL_VAR.CODE.');
   const payload = { CODE: { ...(record || {}), ...(formulaValues || {}) } };
   const libraries = librariesFor(normalizedFormula);
   try {
@@ -75,8 +141,6 @@ async function evaluateFormula(formula, record, formulaValues = {}, timeoutMs = 
     if (/timed out/i.test(message)) {
       return { status: 'FAILED', error: message, calculationText: response?.calculation || normalizedFormula, inputs: payload.CODE };
     }
-    // The package's calculation explainer has edge cases around helper-library calls.
-    // Fall back to the same disposable worker, never the API process, for those cases.
     return await evaluateWithWorker(normalizedFormula, record, formulaValues, timeoutMs);
   } catch (error) {
     if (/timed out/i.test(error.message || '')) {
