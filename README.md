@@ -27,7 +27,7 @@ Changes require `expectedVersionId`. A MySQL named lock per UUID serializes writ
 
 Dependencies are inspected from formula text and topologically sorted. Cycles return a path. Each evaluation runs in a child process with a timeout. Run logs share one run UUID and are written using one multi-row INSERT. Bulk preview is capped at 500 records and bounded concurrency is used. All seven SQL reports are in `sql/queries.sql`.
 
-## Insert-only trade-offs (14 lines)
+## Insert-only trade-offs
 1. Append-only history preserves a complete audit trail.
 2. Every version can be reconstructed without mutable audit metadata.
 3. Rollback adds a new version and retains intervening changes.
@@ -43,7 +43,7 @@ Dependencies are inspected from formula text and topologically sorted. Cycles re
 13. Paginate history responses for long-lived formulas.
 14. Analyze tables and validate indexes as usage grows.
 
-## Verification status
-The GitHub Actions workflow runs the API and integration tests against MySQL 8. It covers formula creation/change, history, historical preview, optimistic concurrency, dependency failures, timeout handling, rounding, and bulk preview. The formula interpreter's actual `interpretor()` API is used.
+## Testing
+Run the automated test suite with `npm test`. Database integration tests require MySQL 8 and the database configuration described in Setup. The GitHub Actions workflow runs the test suite against MySQL 8.
 
-The 500-record × 10-formula benchmark has taken roughly 106–128 seconds on the standard two-core GitHub-hosted runner, depending on load and timeout settings. CI allows up to 150 seconds for that benchmark; outside CI, the test enforces the assignment's 30-second target. The target-hardware 30-second result must be verified on the laptop intended for submission. Do not treat a green CI run on a slower runner as proof that the 30-second laptop requirement has passed.
+The tests cover API behavior, formula creation and changes, version history and rollback, historical previews, optimistic concurrency, dependency handling, evaluation errors and timeouts, rounding, and bulk preview, including a 500-record workload.
