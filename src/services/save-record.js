@@ -25,7 +25,7 @@ async function saveRecord(table, data, options = {}) {
   if (!metadata.length) throw new AppError(400, 'INVALID_TABLE', 'Table does not exist in the configured database.');
   const columns = metadata.filter(c => !String(c.EXTRA).includes('auto_increment')).map(c=>c.COLUMN_NAME);
   if (!columns.includes(uuidColumn)) throw new AppError(400, 'INVALID_UUID_COLUMN', 'The configured UUID column does not exist in this table.');
-  if (!columns.includes('id')) throw new AppError(400, 'INVALID_TABLE', 'Insert-only records require an auto-increment id column.');
+  if (!metadata.some(c => c.COLUMN_NAME === 'id' && String(c.EXTRA).includes('auto_increment'))) throw new AppError(400, 'INVALID_TABLE', 'Insert-only records require an auto-increment id column.');
   const prepared = [];
   for (const input of records) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) {
