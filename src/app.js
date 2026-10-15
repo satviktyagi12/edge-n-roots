@@ -1,0 +1,13 @@
+const express=require('express');
+const rateLimit=require('express-rate-limit');
+const routes=require('./routes/formula-routes');
+const {notFound,errorHandler}=require('./middleware/error-handler');
+const app=express();
+app.disable('x-powered-by');
+app.use(express.json({limit:'1mb'}));
+app.use(rateLimit({windowMs:60_000,limit:300,standardHeaders:true,legacyHeaders:false}));
+app.get('/health',(_req,res)=>res.json({status:'ok'}));
+app.use(routes);
+app.use(notFound);
+app.use(errorHandler);
+module.exports=app;
