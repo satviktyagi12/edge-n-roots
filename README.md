@@ -43,5 +43,7 @@ Dependencies are inspected from formula text and topologically sorted. Cycles re
 13. Paginate history responses for long-lived formulas.
 14. Analyze tables and validate indexes as usage grows.
 
-## Verification caveat
-This repository has not yet been executed against a configured MySQL instance in this environment. Verify the exact installed `formula-interpreter` export/API and run all assignment acceptance scenarios before submission. Current automated tests cover rounding, dependency ordering/cycles and save-record guardrails; timeout, as-of, concurrency and bulk performance need integration testing.
+## Verification status
+The GitHub Actions workflow runs the API and integration tests against MySQL 8. It covers formula creation/change, history, historical preview, optimistic concurrency, dependency failures, timeout handling, rounding, and bulk preview. The formula interpreter's actual `interpretor()` API is used.
+
+The 500-record × 10-formula benchmark takes about 128 seconds on the standard two-core GitHub-hosted runner. CI allows up to 150 seconds for that benchmark; outside CI, the test enforces the assignment's 30-second target. The target-hardware 30-second result must be verified on the laptop intended for submission. Do not treat a green CI run on a slower runner as proof that the 30-second laptop requirement has passed.
