@@ -17,8 +17,8 @@ async function formulasAt(asOf) {
   return rows;
 }
 
-async function previewRecord(record, formulaUuids, asOf) {
-  const started = Date.now(); const runUuid = randomUUID();
+async function previewRecord(record, formulaUuids, asOf, options = {}) {
+  const started = Date.now(); const runUuid = options.runUuid || randomUUID();
   let formulas = await formulasAt(asOf);
   if (formulaUuids?.length) {
     const selected = new Set(formulaUuids);
@@ -71,9 +71,13 @@ async function previewRecord(record, formulaUuids, asOf) {
       });
     }
   }
-  await insertRunLogs(logs);
+  if (!options.deferLogs) await insertRunLogs(logs);
   const elapsedMs = Date.now()-started;
-  return {runUuid,results,record:{...record,...values},metrics:{totalTimeMs:elapsedMs,averageTimePerRecordMs:elapsedMs,failures:results.filter(r=>r.status==='FAILED').length}};
+  return {
+    runUuid, results, record:{...record,...values},
+    metrics:{totalTimeMs:elapsedMs,averageTimePerRecordMs:elapsedMs,failures:results.filter(r=>r.status==='FAILED').length},
+    ...(options.deferLogs ? { _logs: logs } : {})
+  };
 }
 
 async function previewBulk(records, formulaUuids, asOf) {
@@ -81,8 +85,13 @@ async function previewBulk(records, formulaUuids, asOf) {
     throw new AppError(400,'BULK_LIMIT',`records must contain at most ${config.maxBulkRecords} records.`);
   }
   const limit = pLimit(config.bulkConcurrency); const started = Date.now();
-  const results = await Promise.all(records.map(record=>limit(()=>previewRecord(record,formulaUuids,asOf))));
+  const runUuid = randomUUID();
+  const results = await Promise.all(records.map(record=>limit(()=>previewRecord(record,formulaUuids,asOf,{deferLogs:true,runUuid}))));
+  const logs = results.flatMap(result => result._logs || []);
+  results.forEach(result => { delete result._logs; });
+  // One multi-row insert for the entire bulk run; every row shares this request's run UUID.
+  await insertRunLogs(logs);
   const elapsedMs=Date.now()-started;
-  return {results,metrics:{totalTimeMs:elapsedMs,averageTimePerRecordMs:Number((elapsedMs/records.length).toFixed(2)),failures:results.reduce((n,r)=>n+r.metrics.failures,0),records:records.length}};
+  return {runUuid,results,metrics:{totalTimeMs:elapsedMs,averageTimePerRecordMs:Number((elapsedMs/records.length).toFixed(2)),failures:results.reduce((n,r)=>n+r.metrics.failures,0),records:records.length}};
 }
 module.exports = { previewRecord, previewBulk };
