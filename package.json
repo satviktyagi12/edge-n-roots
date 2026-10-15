@@ -16,7 +16,7 @@
     "express-rate-limit": "^7.5.0",
     "formula-interpreter": "^2.1.0",
     "mysql2": "^3.12.0",
-    "p-limit": "^6.2.0",
+    "p-limit": "^3.1.0",
     "uuid": "^11.0.5",
     "zod": "^3.24.1"
   },
