@@ -28,7 +28,12 @@ rl.on('close', async () => {
       else if (typeof library.interpret === 'function') response = await library.interpret(formula, { EXTERNAL_VAR: data }, { timeout: 800 });
       if (response && !response.error && String(response.status || 'SUCCESS').toUpperCase() !== 'FAILED') {
         result = response.result ?? response.value;
-        process.stdout.write(JSON.stringify({ status:'SUCCESS', result, inputs:response.inputs || data, calculationText:response.calculationText || response.calculation || formula }));
+        process.stdout.write(JSON.stringify({
+          status: 'SUCCESS',
+          result,
+          inputs: response.inputs || data,
+          calculationText: response.calculationText || response.calculation || formula
+        }));
         return;
       }
       if (response?.error) libraryError = String(response.error);
@@ -37,10 +42,24 @@ rl.on('close', async () => {
     }
     // Isolated fallback for package/API mismatch; the parent also enforces a hard timeout.
     const script = '(function(){' + formula + '\n})()';
-    result = vm.runInNewContext(script, context, { timeout: 800, contextCodeGeneration: { strings: false, wasm: false } });
+    result = vm.runInNewContext(script, context, {
+      timeout: 800,
+      contextCodeGeneration: { strings: false, wasm: false }
+    });
     if (typeof result === 'undefined') throw new Error(libraryError || 'Formula did not return a value.');
-    const substituted = formula.replace(/EXTERNAL_VAR\\s*\\.\\s*([A-Za-z_$][\\w$]*)/g, (match, key) => Object.prototype.hasOwnProperty.call(data, key) ? JSON.stringify(data[key]) : match);\n    process.stdout.write(JSON.stringify({ status:'SUCCESS', result, inputs:data, calculationText:formula + '\\n=> ' + substituted + '\\n=> ' + JSON.stringify(result) }));
+    const substituted = formula.replace(/EXTERNAL_VAR\s*\.\s*([A-Za-z_$][\w$]*)/g,
+      (match, key) => Object.prototype.hasOwnProperty.call(data, key) ? JSON.stringify(data[key]) : match);
+    process.stdout.write(JSON.stringify({
+      status: 'SUCCESS',
+      result,
+      inputs: data,
+      calculationText: formula + '\n=> ' + substituted + '\n=> ' + JSON.stringify(result)
+    }));
   } catch (error) {
-    process.stdout.write(JSON.stringify({ status:'FAILED', error:error.message, calculationText:payload?.formula || input }));
+    process.stdout.write(JSON.stringify({
+      status: 'FAILED',
+      error: error.message,
+      calculationText: payload?.formula || input
+    }));
   }
 });
