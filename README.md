@@ -25,7 +25,7 @@ Every formula change appends a row with the same logical UUID and a new auto-inc
 
 Changes require `expectedVersionId`. A MySQL named lock per UUID serializes writers across app processes. After acquiring it, the service checks the latest row; stale requests receive 409 and the current version. The lock is released in a finally block.
 
-Dependencies are inspected from formula text and topologically sorted. Cycles return a path. Each evaluation runs in a child process with a timeout. Run logs share one run UUID and are written using one multi-row INSERT. Bulk preview is capped at 500 records and bounded concurrency is used. All seven SQL reports are in `sql/queries.sql`.
+Dependencies are inspected from formula text and topologically sorted. Cycles return a path. Simple arithmetic formulas use a cached, restricted VM fast path with a per-evaluation timeout; more complex formulas use `formula-interpreter` with a disposable-worker fallback. Run logs share one run UUID and are written using one multi-row INSERT. Bulk preview is capped at 500 records and bounded concurrency is used. All seven SQL reports are in `sql/queries.sql`.
 
 ## Insert-only trade-offs
 1. Append-only history preserves a complete audit trail.
